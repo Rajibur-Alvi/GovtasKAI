@@ -1,0 +1,6 @@
+{
+  "name": "GovTaskAI",
+  "description": "Secure administrative automation wrapper with multi-factor authentication, database AES cryptographic encryption, and direct Gemini AI compliance checks.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
