@@ -36,7 +36,8 @@ object GeminiService {
         module: String,
         taskName: String,
         applicantName: String,
-        decryptedFields: Map<String, String>
+        decryptedFields: Map<String, String>,
+        isOfflineMode: Boolean = false
     ): AIResult = withContext(Dispatchers.IO) {
         
         // 1. Gather all inputs to build context
@@ -57,6 +58,12 @@ object GeminiService {
         }
         if (parcelId.isNotEmpty() && !CryptoEngine.validateParcelId(parcelId)) {
             validationErrors.add("Property Parcel/Tax ID is structurally invalid. Format must be alphanumeric containing numeric digits (Min 6 chars).")
+        }
+
+        // Check if manual offline mode is requested
+        if (isOfflineMode) {
+            Log.d(TAG, "Enforcing manual Tactical Offline Failover validation.")
+            return@withContext runOfflineEvaluation(module, taskName, applicantName, decryptedFields, validationErrors, squareFootage, cost)
         }
 
         // Check if there's a valid API Key at runtime
@@ -266,6 +273,88 @@ object GeminiService {
         return AIResult(
             status = status,
             confidence = kotlin.math.max(30, confidence),
+            evaluationText = feedback.toString(),
+            missingInfo = missingList.joinToString(", ")
+        )
+    }
+
+    private fun runOfflineEvaluation(
+        module: String,
+        taskName: String,
+        applicantName: String,
+        decryptedFields: Map<String, String>,
+        validationErrors: List<String>,
+        squareFootage: Double,
+        cost: Double
+    ): AIResult {
+        val feedback = StringBuilder()
+        val missingList = mutableListOf<String>()
+        val confidence = 85
+
+        feedback.append("📡 TACTICAL OFFLINE FAILOVER ACTIVE\n")
+        feedback.append("Primary server signal interrupted or local environment is air-gapped.\n")
+        feedback.append("Form processing executed locally using the Sentinel Core Dry-Run Engine.\n\n")
+
+        if (validationErrors.isNotEmpty()) {
+            feedback.append("🚨 LOCAL DIGIT-TYPO / SYNTAX ALERTS DISCOVERED:\n")
+            validationErrors.forEach { feedback.append("- $it\n") }
+            feedback.append("\nAdjust fields and submit again to secure local offline verification.\n")
+        } else {
+            feedback.append("✅ Local structural validations clean. SSN/TIN & identifiers contain correct digit length and formats.\n")
+        }
+
+        when (module.uppercase()) {
+            "CIVIC" -> {
+                feedback.append("\nCiting U.S. Federal Code Title 42 Regulations (Offline Validator):\n")
+                val ssn = decryptedFields["SSN_OR_TIN"] ?: ""
+                if (ssn.isNotEmpty() && ssn.length != 11) {
+                    feedback.append("⚠️ Structural Warning: Social Security Numbers are strictly 11 characters formatted as AAA-GG-SSSS.\n")
+                }
+                if (decryptedFields["Passport_City_Of_Birth"].isNullOrBlank()) {
+                    missingList.add("Physical proof of place and city of birth")
+                }
+            }
+            "TAX" -> {
+                feedback.append("\nCiting Internal Revenue Code Section 6011 Compliance Grid (Offline Validator):\n")
+                val tin = decryptedFields["Taxpayer_TIN"] ?: ""
+                if (tin.isNotEmpty() && tin.length != 9) {
+                    feedback.append("⚠️ Structural Warning: Taxpayer ID (TIN) must contain exactly 9 numeric digits.\n")
+                }
+                val income = decryptedFields["Est_Annual_Income"]?.toDoubleOrNull() ?: 0.0
+                if (income <= 0.0) {
+                    missingList.add("Proof of W-2 or certified 1099 revenue records")
+                }
+            }
+            "BUSINESS" -> {
+                feedback.append("\nCiting Unified Commercial Code Article 9 registration checks (Offline Validator):\n")
+                val ein = decryptedFields["Business_EIN"] ?: ""
+                if (ein.isNotEmpty() && ein.length != 10) {
+                    feedback.append("⚠️ Structural Warning: Employer ID (EIN) is strictly 10 characters formatted as XX-XXXXXXX.\n")
+                }
+                if (decryptedFields["Corporate_Structure"].isNullOrBlank()) {
+                    missingList.add("Corporate state organization articles (Inc/LLC)")
+                }
+            }
+            "PROPERTY" -> {
+                feedback.append("\nCiting Municipal Zoning Code Section 4.12 Guidelines (Offline Validator):\n")
+                val parcel = decryptedFields["Property_Parcel_ID"] ?: ""
+                if (parcel.isNotEmpty() && parcel.length < 6) {
+                    feedback.append("⚠️ Structural Warning: Municipal real estate Parcel IDs must consist of at least 6 alphanumeric digits.\n")
+                }
+                if (squareFootage > 5000.0) {
+                    feedback.append("⚠️ Warning: Large additions over 5,000 sq ft will trigger mandatory live environmental reviews during sync.\n")
+                }
+            }
+        }
+
+        if (missingList.isNotEmpty()) {
+            feedback.append("\n📝 DEFICIENCY ITEMS COMPILED OFFLINE:\n")
+            missingList.forEach { feedback.append("- Pending Document: $it\n") }
+        }
+
+        return AIResult(
+            status = "OFFLINE_PENDING_SYNC",
+            confidence = confidence,
             evaluationText = feedback.toString(),
             missingInfo = missingList.joinToString(", ")
         )

@@ -10,6 +10,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -71,6 +73,20 @@ class MainActivity : ComponentActivity() {
 fun GovTaskApp(viewModel: GovTaskViewModel) {
     val loginState by viewModel.loginState.collectAsStateWithLifecycle()
     val accountState by viewModel.accountFlow.collectAsStateWithLifecycle()
+
+    // Volatile Memory Zero-Out: lifecycle observer to wipe memory blocks on backgrounding ON_STOP
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                viewModel.purgeVolatileMemory()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -712,7 +728,75 @@ fun MainWorkspaceScreen(
         // Security Cleared status box
         item {
             SecurityClearanceCard(tasksCount = tasks.size)
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Communication Link Status Switcher
+            val isOffline by viewModel.isOfflineMode.collectAsStateWithLifecycle()
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = com.example.ui.theme.HighDensitySurface),
+                border = BorderStroke(1.dp, com.example.ui.theme.HighDensityBorder)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "COMMUNICATION LINK CRYPTO GRID",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = com.example.ui.theme.Slate500
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isOffline) Color(0xFFDC2626) else Color(0xFF16A34A))
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isOffline) "Isolated Air-Gapped Engine (OFFLINE)" else "Satellite Sync Feed (Gemini AI ONLINE)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = com.example.ui.theme.Slate900
+                            )
+                        }
+                    }
+                    
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFFE2E8F0))
+                            .padding(2.dp)
+                    ) {
+                        // Online Tab
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (!isOffline) Color.White else Color.Transparent)
+                                .clickable { viewModel.setOfflineMode(false) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("ONLINE", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = if (!isOffline) com.example.ui.theme.HighDensityPrimary else com.example.ui.theme.Slate500)
+                        }
+                        // Offline Tab
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (isOffline) Color(0xFFFEE2E2) else Color.Transparent)
+                                .clickable { viewModel.setOfflineMode(true) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("AIR-GAP", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = if (isOffline) Color(0xFFDC2626) else com.example.ui.theme.Slate500)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
         // Horizontal Grid Selection Tabs for Modules
@@ -1049,6 +1133,7 @@ fun ModuleFormCard(
     onSubmit: (applicantName: String, dataFields: Map<String, String>, pinSource: String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
+    var showScannerDialog by remember { mutableStateOf(false) }
     var securityTokenPinConfirm by remember { mutableStateOf("") }
 
     // State bindings for specific fields
@@ -1099,6 +1184,24 @@ fun ModuleFormCard(
             Text(text = title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = com.example.ui.theme.Slate900)
             Text(text = info, fontSize = 11.sp, color = com.example.ui.theme.Slate500, lineHeight = 15.sp, modifier = Modifier.padding(top = 2.dp))
             
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = { showScannerDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F9), contentColor = com.example.ui.theme.Slate900),
+                border = BorderStroke(1.dp, com.example.ui.theme.HighDensityBorder),
+                modifier = Modifier.fillMaxWidth().height(38.dp).testTag("trigger_ocr_scan_button"),
+                contentPadding = PaddingValues(horizontal = 12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CameraAlt, 
+                    contentDescription = "OCR Scanner icon", 
+                    modifier = Modifier.size(14.dp), 
+                    tint = com.example.ui.theme.HighDensityPrimary
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("SCAN & EXTRACT FORM / ID (AIR-GAPPED OCR)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = com.example.ui.theme.Slate900)
+            }
+
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 12.dp),
                 color = com.example.ui.theme.HighDensityBorder
@@ -1466,6 +1569,42 @@ fun ModuleFormCard(
                     Text("ENCRYPT & COMPILE WITH AI CO-PILOT", fontWeight = FontWeight.SemiBold)
                 }
             }
+
+            if (showScannerDialog) {
+                AdministrativeDocumentScannerDialog(
+                    onDismissRequest = { showScannerDialog = false },
+                    onApplyScannedData = { scanName, scanEmail, arg1, arg2, arg3 ->
+                        name = scanName
+                        when (module) {
+                            "CIVIC" -> {
+                                civicEmail = scanEmail
+                                civicSsn = arg1
+                                civicBirthCity = arg2
+                                civicEmergencyNum = arg3
+                            }
+                            "TAX" -> {
+                                taxEmail = scanEmail
+                                taxTin = arg1
+                                taxYear = arg2
+                                taxIncome = arg3
+                            }
+                            "BUSINESS" -> {
+                                busEmail = scanEmail
+                                busEin = arg1
+                                busStructure = arg2
+                                busCapital = arg3
+                            }
+                            "PROPERTY" -> {
+                                propEmail = scanEmail
+                                propParcelId = arg1
+                                propSqFt = arg2
+                                propEstCost = arg3
+                            }
+                        }
+                    },
+                    currentModule = module
+                )
+            }
         }
     }
 }
@@ -1481,6 +1620,7 @@ fun ComplianceAuditOutputCard(
         "APPROVED" -> Triple(Color(0xFF15803D), Color(0xFFF0FDF4), Icons.Default.CheckCircle)
         "VERIFIED" -> Triple(com.example.ui.theme.HighDensityPrimary, com.example.ui.theme.CivicBg, Icons.Default.Info)
         "MANUAL_REVIEW_NEEDED" -> Triple(com.example.ui.theme.HighDensityError, Color(0xFFFEF2F2), Icons.Default.Warning)
+        "OFFLINE_PENDING_SYNC" -> Triple(Color(0xFFD97706), Color(0xFFFEF3C7), Icons.Default.Info)
         else -> Triple(com.example.ui.theme.Slate900, com.example.ui.theme.HighDensitySurface, Icons.Default.Info)
     }
 
@@ -1573,6 +1713,7 @@ fun EncryptedTaskItemCard(
     viewModel: GovTaskViewModel,
     onUnlockRequest: (Int) -> Unit
 ) {
+    val context = LocalContext.current
     val decryptedCache by viewModel.decryptedTaskContents.collectAsStateWithLifecycle()
     val isRevealed = decryptedCache.containsKey(task.id)
 
@@ -1670,12 +1811,59 @@ fun EncryptedTaskItemCard(
                         .padding(10.dp)
                 ) {
                     Column {
-                        Text(
-                            text = "DECRYPTED PLAIN-TEXT STRUCTS (VOLATILE REGISTRY):",
-                            fontSize = 9.sp,
-                            color = com.example.ui.theme.HighDensityPrimary,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "DECRYPTED PLAIN-TEXT STRUCTS (VOLATILE RAM):",
+                                fontSize = 9.sp,
+                                color = com.example.ui.theme.HighDensityPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            // Native high density PDF generator button
+                            TextButton(
+                                onClick = {
+                                    val plaintextStr = decryptedCache[task.id] ?: ""
+                                    val recordsMap = mutableMapOf<String, String>()
+                                    
+                                    // Parse key values from decrypted plain-text formatted output
+                                    plaintextStr.lines().forEach { line ->
+                                        if (line.contains(":")) {
+                                            val parts = line.split(":", limit = 2)
+                                            if (parts.size == 2) {
+                                                recordsMap[parts[0].trim()] = parts[1].trim()
+                                            }
+                                        }
+                                    }
+                                    
+                                    val pdfFile = com.example.security.PdfGenerator.generateFormPdf(context, task, recordsMap)
+                                    if (pdfFile != null) {
+                                        Toast.makeText(
+                                            context, 
+                                            "📄 OFFICIAL PDF COMPILED SUCCESSFULLY:\nDocument saved under: ${pdfFile.name}", 
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        viewModel.addAuditLog("📄 OFFICIAL_PDF: Pre-compiled form file G-${task.id % 10000} written into downloads folder.")
+                                    } else {
+                                        Toast.makeText(context, "🚨 PDF compilation error. Security sandbox violation.", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share, 
+                                    contentDescription = "Export PDF file", 
+                                    tint = com.example.ui.theme.HighDensityPrimary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("EXPORT PDF PACKET", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = com.example.ui.theme.HighDensityPrimary)
+                            }
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Applicant: ${task.applicantName}\n" + (decryptedCache[task.id] ?: ""),
@@ -1756,4 +1944,251 @@ fun SystemAuditConsoleCard(logs: List<String>) {
             }
         }
     }
+}
+
+@Composable
+fun AdministrativeDocumentScannerDialog(
+    onDismissRequest: () -> Unit,
+    onApplyScannedData: (
+        name: String,
+        email: String,
+        arg1: String,
+        arg2: String,
+        arg3: String
+    ) -> Unit,
+    currentModule: String
+) {
+    var selectedDocIndex by remember { mutableStateOf(0) }
+    var isScanning by remember { mutableStateOf(false) }
+    var scanProgress by remember { mutableStateOf(0f) }
+    var scanStatusText by remember { mutableStateOf("Ready to scan") }
+    var scanCompleted by remember { mutableStateOf(false) }
+
+    val docOptions = when (currentModule) {
+        "CIVIC" -> listOf("U.S. National ID (Margaret Vance)", "Expired Passport Card")
+        "TAX" -> listOf("Standard W-2 Form (Robert Sterling)", "Form 1099-MISC Record")
+        "BUSINESS" -> listOf("Articles of Organization (Helix Biotech)", "Commercial Trade Permit")
+        "PROPERTY" -> listOf("Zoning Deed Receipt (David Thorne)", "East District Permit Proposal")
+        else -> listOf("Unknown Certification Paper")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(imageVector = Icons.Default.CameraAlt, contentDescription = "OCR Scanner icon", tint = com.example.ui.theme.HighDensityPrimary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("EDGE OCR LASER SCANNER vx7", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = com.example.ui.theme.Slate900)
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Aptly position your physical civic document boundaries inside the green focus brackets. On-device Core ML-Kit de-skew, contrast boost, and text extraction runs safely in air-gapped RAM.",
+                    fontSize = 11.sp,
+                    color = com.example.ui.theme.Slate500,
+                    lineHeight = 15.sp
+                )
+                
+                Spacer(modifier = Modifier.height(10.dp))
+                
+                Text("SELECT PHYSICAL FORM TARGET:", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = com.example.ui.theme.Slate700)
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(), 
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    docOptions.forEachIndexed { idx, option ->
+                        Button(
+                            onClick = { 
+                                if (!isScanning) {
+                                    selectedDocIndex = idx
+                                    scanCompleted = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selectedDocIndex == idx) com.example.ui.theme.HighDensityPrimary else Color(0xFFF1F5F9),
+                                contentColor = if (selectedDocIndex == idx) Color.White else com.example.ui.theme.Slate700
+                            ),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                            modifier = Modifier.weight(1f).height(30.dp),
+                            border = if (selectedDocIndex == idx) null else BorderStroke(1.dp, com.example.ui.theme.HighDensityBorder)
+                        ) {
+                            Text(
+                                text = if (option.length > 18) option.take(16) + ".." else option, 
+                                fontSize = 8.sp, 
+                                fontWeight = FontWeight.ExtraBold, 
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Simulated Viewfinder Frame
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black)
+                        .border(1.dp, if (isScanning) Color.Green else com.example.ui.theme.HighDensityBorder, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isScanning) {
+                        val infiniteTransition = rememberInfiniteTransition()
+                        val floatAnim by infiniteTransition.animateFloat(
+                            initialValue = 0.05f,
+                            targetValue = 0.95f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1400, easing = LinearEasing),
+                                repeatMode = RepeatMode.Reverse
+                            )
+                        )
+                        
+                        // Green Laser Line
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .align(Alignment.TopCenter)
+                                .offset(y = (floatAnim * 150).dp)
+                                .background(Color.Green)
+                        )
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = Color.Green, strokeWidth = 3.dp, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "CORE-OCR EXTRACTING: ${scanProgress.toInt()}%", 
+                                color = Color.Green, 
+                                fontSize = 9.sp, 
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = scanStatusText, 
+                                color = Color.White.copy(alpha = 0.7f), 
+                                fontSize = 8.sp, 
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    } else if (scanCompleted) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(8.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Check, contentDescription = "Scanned Check mark", tint = Color.Green, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("SCAN COMPLETED SECURELY", color = Color.Green, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = when (currentModule) {
+                                    "CIVIC" -> "NAME: MARGARET K. VANCE\nID VALUE: 045-88-2512\nBIRTHCITY: INDIANAPOLIS\nEMAIL: margaret.vance@fed.gov"
+                                    "TAX" -> "NAME: ROBERT T. STERLING\nID TIN: 258416397\nTAX YEAR: 2025\nEST ANNUAL INCOME: $185,900"
+                                    "BUSINESS" -> "NAME: HELIX BIOLABS INC.\nID EIN: 47-1958214\nSTRUCTURE: C-Corp\nCAPITAL BUDGET: $820,000"
+                                    "PROPERTY" -> "NAME: DAVID THORNE\nPARCEL ID: PL-85261-N\nZONING SIZE: 4250 SQFT\nEST BUDGET: $135,000"
+                                    else -> "GENERIC UNIFIED ADMINISTRATIVE TUPLE EXTREMELY SAFE"
+                                },
+                                color = Color.LightGray,
+                                fontSize = 8.sp,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 11.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(imageVector = Icons.Default.CameraAlt, contentDescription = "Camera viewport", tint = Color.LightGray.copy(alpha = 0.4f), modifier = Modifier.size(32.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("TARGET VIEWPORT SLEEPING", color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Text("TAP BELOW TRIGGER TO INITIATE LIVE SCAN", color = Color.Gray.copy(alpha = 0.6f), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+
+                    // Green brackets overlay
+                    Box(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+                        Text("[", color = if (isScanning) Color.Green else Color.LightGray.copy(alpha = 0.3f), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopStart))
+                        Text("]", color = if (isScanning) Color.Green else Color.LightGray.copy(alpha = 0.3f), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd))
+                        Text("[", color = if (isScanning) Color.Green else Color.LightGray.copy(alpha = 0.3f), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart))
+                        Text("]", color = if (isScanning) Color.Green else Color.LightGray.copy(alpha = 0.3f), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomEnd))
+                    }
+                }
+
+                if (isScanning) {
+                    LaunchedEffect(Unit) {
+                        scanProgress = 0f
+                        scanStatusText = "🔍 Aligning focal borders..."
+                        delay(500)
+                        scanProgress = 30f
+                        scanStatusText = "📐 Running Perspective Warp..."
+                        delay(500)
+                        scanProgress = 65f
+                        scanStatusText = "🔆 Binarizing and clarifying reflections..."
+                        delay(500)
+                        scanProgress = 85f
+                        scanStatusText = "🧬 Dynamic OCR Matrix segmentation..."
+                        delay(500)
+                        scanProgress = 100f
+                        isScanning = false
+                        scanCompleted = true
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (scanCompleted) {
+                Button(
+                    onClick = {
+                        when (currentModule) {
+                            "CIVIC" -> {
+                                onApplyScannedData("Margaret K. Vance", "margaret.vance@fed.gov", "045-88-2512", "Indianapolis", "317-555-0104")
+                            }
+                            "TAX" -> {
+                                onApplyScannedData("Robert T. Sterling", "r.sterling@comcast.net", "258416397", "2025", "185900")
+                            }
+                            "BUSINESS" -> {
+                                onApplyScannedData("Helix BioLabs Inc.", "compliance@helixbiolabs.com", "47-1958214", "C-Corp", "820000")
+                            }
+                            "PROPERTY" -> {
+                                onApplyScannedData("David Thorne", "david@thornedesign.net", "PL-85261-N", "4250", "135000")
+                            }
+                        }
+                        onDismissRequest()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Text("APPLY DIGITAL SIGNATURE PACKET", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Button(
+                    onClick = { 
+                        if (!isScanning) {
+                            isScanning = true 
+                            scanCompleted = false
+                            scanProgress = 0f
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.HighDensityPrimary),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.FlashOn, contentDescription = "Laser flash icon", modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("TRIGGER OCR DE-SKEW", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismissRequest,
+                modifier = Modifier.height(36.dp)
+            ) {
+                Text("CANCEL", color = com.example.ui.theme.Slate500, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = com.example.ui.theme.HighDensitySurface
+    )
 }

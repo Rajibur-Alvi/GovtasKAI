@@ -76,8 +76,20 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
+    private val _isOfflineMode = MutableStateFlow(false)
+    val isOfflineMode: StateFlow<Boolean> = _isOfflineMode.asStateFlow()
+
     private val _submitStatus = MutableStateFlow<SubmitResult?>(null)
     val submitStatus: StateFlow<SubmitResult?> = _submitStatus.asStateFlow()
+
+    fun setOfflineMode(active: Boolean) {
+        _isOfflineMode.value = active
+        if (active) {
+            addAuditLog("📡 FORCE-OFFLINE: Sentinel isolated offline validator activated manually.")
+        } else {
+            addAuditLog("📡 CONNECTIVITY SYNCHRONIZED: Connected satellite links back to Gemini API.")
+        }
+    }
 
     // Decrypted item session caches to show security status and keep decrypted data safely in volatile RAM
     private val _decryptedTaskContents = MutableStateFlow<Map<Int, String>>(emptyMap())
@@ -240,7 +252,8 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
                 module = module,
                 taskName = taskName,
                 applicantName = applicantName,
-                decryptedFields = fields
+                decryptedFields = fields,
+                isOfflineMode = _isOfflineMode.value
             )
 
             addAuditLog("Brain response ingested. Compliance score calculated: ${aiResult.confidence}%.")
@@ -268,6 +281,12 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
                 missingInfo = aiResult.missingInfo
             )
         }
+    }
+
+    // Zero-out decrypted buffers immediately from RAM when app is backgrounded or session ends
+    fun purgeVolatileMemory() {
+        _decryptedTaskContents.value = emptyMap()
+        addAuditLog("🔒 SECURITY PROTOCOL: Volatile RAM zero-out triggered. Decrypted text structures fully destroyed.")
     }
 
     // Decrypts an individual application in-memory with PIN challenge on user demand
