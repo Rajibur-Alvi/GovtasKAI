@@ -100,6 +100,10 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
     private val _deskWarning = MutableStateFlow<String?>(null)
     val deskWarning: StateFlow<String?> = _deskWarning.asStateFlow()
 
+    fun setDeskWarning(warning: String?) {
+        _deskWarning.value = warning
+    }
+
     fun setOfflineMode(active: Boolean) {
         _isOfflineMode.value = active
         if (active) {
