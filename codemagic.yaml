@@ -1,0 +1,46 @@
+workflows:
+  android-apk-build:
+    name: GovTaskAI Bangladesh Production Release
+    max_build_duration: 15
+    instance_type: mac_mini_m2
+    environment:
+      vars:
+        JAVA_VERSION: "17"
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+    scripts:
+      - name: Initialize Gradle Environment
+        script: |
+          echo "Configuring wrapper for Gradle 9.3.1..."
+          gradle wrapper --gradle-version 9.3.1
+          
+      - name: Generate Local Build Signatures
+        script: |
+          echo "Generating automated build keystore..."
+          keytool -genkeypair -v \
+            -keystore /Users/builder/clone/debug.keystore \
+            -alias androiddebugkey \
+            -keypass android \
+            -storepass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=GovTaskAI Production, O=Compliance, C=BD"
+          
+      - name: Compile Bangladesh Localized Binary
+        script: |
+          TARGET_DIR=$(find . -name "build.gradle*" -not -path "*/.*" | head -n 1 | xargs dirname)
+          echo "Target application directory: $TARGET_DIR"
+          chmod +x ./gradlew
+          
+          echo "Executing production compilation without mock fallbacks..."
+          ./gradlew assembleDebug --no-daemon --stacktrace
+    artifacts:
+      - "**/build/outputs/apk/debug/*.apk"
+    publishing:
+      email:
+        recipients:
+          - rajibulalvi2@gmail.com
