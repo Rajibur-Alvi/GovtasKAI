@@ -28,3 +28,18 @@ data class GovTaskEntity(
     val missingInfo: String = "",
     val creationTime: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "system_audit_logs")
+data class SystemAuditLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val timestamp: Long = System.currentTimeMillis(),
+    val encryptedMessage: String
+)
+
+@Entity(tableName = "encrypted_session_cache")
+data class EncryptedSessionCacheEntity(
+    @PrimaryKey val moduleCode: String,
+    val encryptedData: String,
+    val lastSaved: Long = System.currentTimeMillis()
+)
+

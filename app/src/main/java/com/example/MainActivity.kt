@@ -810,6 +810,7 @@ fun MainWorkspaceScreen(
             ModuleFormCard(
                 module = activeTab,
                 isEvaluating = isEvaluating,
+                viewModel = viewModel,
                 onSubmit = { applicant, fields, pin ->
                     viewModel.submitAdministrativeForm(applicant, fields, pin)
                 }
@@ -1125,41 +1126,49 @@ fun ModuleSelectionTabs(activeTab: String, onTabSelected: (String) -> Unit) {
     }
 }
 
+class DraftDelegate(
+    private val getter: () -> String,
+    private val setter: (String) -> Unit
+) {
+    operator fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): String = getter()
+    operator fun setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: String) {
+        setter(value)
+    }
+}
+
 // Structured verification input sheets
 @Composable
 fun ModuleFormCard(
     module: String,
     isEvaluating: Boolean,
+    viewModel: com.example.ui.GovTaskViewModel,
     onSubmit: (applicantName: String, dataFields: Map<String, String>, pinSource: String) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
+    val draft by viewModel.formDraft.collectAsStateWithLifecycle()
+
+    var name by DraftDelegate({ draft.applicantName }, { Target -> viewModel.updateFormDraft { it.copy(applicantName = Target) } })
+    var civicBirthCity by DraftDelegate({ draft.civicBirthCity }, { Target -> viewModel.updateFormDraft { it.copy(civicBirthCity = Target) } })
+    var civicSsn by DraftDelegate({ draft.civicSsn }, { Target -> viewModel.updateFormDraft { it.copy(civicSsn = Target) } })
+    var civicEmail by DraftDelegate({ draft.civicEmail }, { Target -> viewModel.updateFormDraft { it.copy(civicEmail = Target) } })
+    var civicEmergencyNum by DraftDelegate({ draft.civicEmergencyNum }, { Target -> viewModel.updateFormDraft { it.copy(civicEmergencyNum = Target) } })
+
+    var taxTin by DraftDelegate({ draft.taxTin }, { Target -> viewModel.updateFormDraft { it.copy(taxTin = Target) } })
+    var taxIncome by DraftDelegate({ draft.taxIncome }, { Target -> viewModel.updateFormDraft { it.copy(taxIncome = Target) } })
+    var taxYear by DraftDelegate({ draft.taxYear }, { Target -> viewModel.updateFormDraft { it.copy(taxYear = Target) } })
+    var taxEmail by DraftDelegate({ draft.taxEmail }, { Target -> viewModel.updateFormDraft { it.copy(taxEmail = Target) } })
+
+    var busEin by DraftDelegate({ draft.busEin }, { Target -> viewModel.updateFormDraft { it.copy(busEin = Target) } })
+    var busStructure by DraftDelegate({ draft.busStructure }, { Target -> viewModel.updateFormDraft { it.copy(busStructure = Target) } })
+    var busCapital by DraftDelegate({ draft.busCapital }, { Target -> viewModel.updateFormDraft { it.copy(busCapital = Target) } })
+    var busEmail by DraftDelegate({ draft.busEmail }, { Target -> viewModel.updateFormDraft { it.copy(busEmail = Target) } })
+
+    var propParcelId by DraftDelegate({ draft.propParcelId }, { Target -> viewModel.updateFormDraft { it.copy(propParcelId = Target) } })
+    var propSqFt by DraftDelegate({ draft.propSqFt }, { Target -> viewModel.updateFormDraft { it.copy(propSqFt = Target) } })
+    var propEstCost by DraftDelegate({ draft.propEstCost }, { Target -> viewModel.updateFormDraft { it.copy(propEstCost = Target) } })
+    var propEmail by DraftDelegate({ draft.propEmail }, { Target -> viewModel.updateFormDraft { it.copy(propEmail = Target) } })
+
     var showScannerDialog by remember { mutableStateOf(false) }
     var securityTokenPinConfirm by remember { mutableStateOf("") }
-
-    // State bindings for specific fields
-    // Civic
-    var civicBirthCity by remember { mutableStateOf("") }
-    var civicSsn by remember { mutableStateOf("") }
-    var civicEmail by remember { mutableStateOf("") }
-    var civicEmergencyNum by remember { mutableStateOf("") }
-
-    // Tax
-    var taxTin by remember { mutableStateOf("") }
-    var taxIncome by remember { mutableStateOf("") }
-    var taxYear by remember { mutableStateOf("2026") }
-    var taxEmail by remember { mutableStateOf("") }
-
-    // Business
-    var busEin by remember { mutableStateOf("") }
-    var busStructure by remember { mutableStateOf("LLC") }
-    var busCapital by remember { mutableStateOf("") }
-    var busEmail by remember { mutableStateOf("") }
-
-    // Property
-    var propParcelId by remember { mutableStateOf("") }
-    var propSqFt by remember { mutableStateOf("") }
-    var propEstCost by remember { mutableStateOf("") }
-    var propEmail by remember { mutableStateOf("") }
 
     // Clear active temporary cache on module change
     LaunchedEffect(module) {
@@ -1676,29 +1685,94 @@ fun ComplianceAuditOutputCard(
                 lineHeight = 16.sp
             )
 
-            if (result.missingInfo.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "🚨 DEFICIENCY CHECKLIST (ACTION REQUIRED):",
-                    fontSize = 10.sp,
-                    color = com.example.ui.theme.HighDensityError,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                val deficiencies = result.missingInfo.split(",")
-                for (item in deficiencies) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 1.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(com.example.ui.theme.HighDensityError)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = item.trim(), color = com.example.ui.theme.Slate700, fontSize = 11.sp)
+            if (result.missingInfo.trim().isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Remediation Dashboard Header
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = statusColor.copy(alpha = 0.05f)),
+                    border = BorderStroke(1.dp, statusColor.copy(alpha = 0.2f))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Deficiency Checklist",
+                                tint = statusColor,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "REMEDIATION DASHBOARD & FIELD DIAGNOSTICS",
+                                fontSize = 9.sp,
+                                color = statusColor,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        val deficiencies = result.missingInfo.split(",")
+                        deficiencies.filter { it.trim().isNotEmpty() }.forEach { rawItem ->
+                            val item = rawItem.trim()
+                            
+                            // Parse "[Field] - Issue" format
+                            val (fieldStr, issueStr) = if (item.startsWith("[") && item.contains("]")) {
+                                val closeIdx = item.indexOf("]")
+                                val field = item.substring(1, closeIdx).trim()
+                                val rest = item.substring(closeIdx + 1).trim()
+                                val issue = if (rest.startsWith("-") || rest.startsWith(":")) {
+                                    rest.substring(1).trim()
+                                } else {
+                                    rest
+                                }
+                                Pair(field, issue)
+                            } else {
+                                Pair("", item)
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 4.dp)
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(statusColor)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    if (fieldStr.isNotEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(statusColor.copy(alpha = 0.12f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = fieldStr.uppercase(),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = statusColor
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                    }
+                                    Text(
+                                        text = issueStr,
+                                        color = com.example.ui.theme.Slate700,
+                                        fontSize = 11.sp,
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1841,11 +1915,16 @@ fun EncryptedTaskItemCard(
                                     
                                     val pdfFile = com.example.security.PdfGenerator.generateFormPdf(context, task, recordsMap)
                                     if (pdfFile != null) {
-                                        Toast.makeText(
-                                            context, 
-                                            "📄 OFFICIAL PDF COMPILED SUCCESSFULLY:\nDocument saved under: ${pdfFile.name}", 
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                                        viewModel.exportComplianceLedger(context, task.id) { ledgerFile ->
+                                            (context as? android.app.Activity)?.runOnUiThread {
+                                                val msg = if (ledgerFile != null) {
+                                                    "📄 OFFICIAL PDF & COMPLIANCE LEDGER COMPILED SUCCESSFULLY:\nDocument saved: ${pdfFile.name}\nLedger saved: ${ledgerFile.name}"
+                                                } else {
+                                                    "📄 OFFICIAL PDF COMPILED SUCCESSFULLY:\nDocument saved: ${pdfFile.name}"
+                                                }
+                                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                            }
+                                        }
                                         viewModel.addAuditLog("📄 OFFICIAL_PDF: Pre-compiled form file G-${task.id % 10000} written into downloads folder.")
                                     } else {
                                         Toast.makeText(context, "🚨 PDF compilation error. Security sandbox violation.", Toast.LENGTH_SHORT).show()

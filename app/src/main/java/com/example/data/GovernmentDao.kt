@@ -31,4 +31,24 @@ interface GovernmentDao {
 
     @Query("DELETE FROM gov_tasks")
     suspend fun clearHistory()
+
+    // --- System Audit Log Queries ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAuditLog(log: SystemAuditLogEntity)
+
+    @Query("SELECT * FROM system_audit_logs ORDER BY timestamp ASC")
+    suspend fun getAllAuditLogsSync(): List<SystemAuditLogEntity>
+
+    // --- Encrypted Session Cache Queries ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveSessionCache(session: EncryptedSessionCacheEntity)
+
+    @Query("SELECT * FROM encrypted_session_cache WHERE moduleCode = :moduleCode LIMIT 1")
+    suspend fun getSessionCache(moduleCode: String): EncryptedSessionCacheEntity?
+
+    @Query("DELETE FROM encrypted_session_cache WHERE moduleCode = :moduleCode")
+    suspend fun deleteSessionCache(moduleCode: String)
+
+    @Query("DELETE FROM encrypted_session_cache")
+    suspend fun clearAllSessionCaches()
 }

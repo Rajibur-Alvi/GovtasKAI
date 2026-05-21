@@ -84,22 +84,58 @@ object GeminiService {
             return@withContext runLocalEvaluation(module, taskName, applicantName, decryptedFields, validationErrors, squareFootage, cost)
         }
 
-        // 3. Construct intelligent prompt for Gemini 3.5 Flash
+        // 3. Construct dynamic regulatory knowledge base context
+        val knowledgeBaseContext = when (module.uppercase()) {
+            "CIVIC" -> """
+                REGULATORY KNOWLEDGE BASE [CIVIC DESK - U.S. Federal Code Title 42 Identity Rules]:
+                - Every applicant must provide valid place and country of birth.
+                - An emergency backup contact number is mandatory for federal security/safety guidelines.
+                - Verify that SSN/TIN fields are correctly formatted (AAA-GG-SSSS, 11 characters including hyphens).
+                - Analyze for identity spoofing or suspicious configurations.
+            """.trimIndent()
+            "TAX" -> """
+                REGULATORY KNOWLEDGE BASE [TAX DESK - Internal Revenue Code (IRC) Section 6011]:
+                - Verify standard tax threshold rules. Any taxpayer income exceeding $200,000 USD is high-asset/high-risk, which mandates "MANUAL_REVIEW_NEEDED" and requires additional manual balance audits.
+                - Verify TIN/SSN length matches federal 9-digit format or AAA-GG-SSSS.
+                - Proof of certified revenue source (W-2 or 1099) must be mentioned.
+            """.trimIndent()
+            "BUSINESS" -> """
+                REGULATORY KNOWLEDGE BASE [CORPORATE DESK - Unified Commercial Code (UCC) Articles]:
+                - Organization articles are mandatory for standard corporate registration (e.g. LLC, S-Corp, C-Corp).
+                - Capitalization matching: Minimum administrative starting capital/fee is strictly $500. Under §500 USD triggers warnings.
+                - Employer Identification Number (EIN) is mandatory and must follow XX-XXXXXXX format (10 characters including hyphen).
+            """.trimIndent()
+            "PROPERTY" -> """
+                REGULATORY KNOWLEDGE BASE [PROPERTY DESK - Municipal Zoning Code Section 4.12]:
+                - Validate the county parcel boundary mapping. Parcel ID must be alphanumeric and minimum 6 chars.
+                - Any residential addition or structure exceeding 5,000 square feet represents an urban zoning variance and MANDATES "MANUAL_REVIEW_NEEDED" status with a special environmental impact inquiry.
+                - Estimated project budgets exceeding $150,000 USD require certified contractor liability insurance coverage proof.
+            """.trimIndent()
+            else -> ""
+        }
+
+        // 4. Construct intelligent prompt and system instruction for Gemini 3.5 Flash using strict JSON schema
         val systemInstruction = """
             You are federal and municipal legal processor engine GovTaskAI. Your assignment is to underwrite and evaluate administrative, tax, and property files for complete compliance.
             Analyze inputs, run verification, check for missing or suspicious configurations, and provide structured outputs.
+            
+            $knowledgeBaseContext
+            
             You must reply ONLY with a single valid JSON object containing exactly these fields:
             {
-               "status": "APPROVED" (if compliant with no errors), "VERIFIED" (fully validated but has minor comments), or "MANUAL_REVIEW_NEEDED" (critical discrepancies, missing survey mapping, or formatting errors),
-               "confidence": Int (a score from 0 to 100),
-               "evaluationText": String (a detailed, professional compliance summary citing regulations),
-               "missingInfo": String (comma-separated requirements missing, e.g., 'Property survey, Contractor license proof')
+              "compliance_status": "APPROVED" (if compliant with no errors), "VERIFIED" (fully validated but has minor comments/warnings), or "MANUAL_REVIEW_NEEDED" (critical discrepancies, missing details, or regulatory mismatches),
+              "confidence_score": 95.0,
+              "risk_assessment": "Low risk. All corporate parameters match standardized registration checklists.",
+              "deficiency_checklist": [
+                {"field": "EIN", "issue": "Format is valid, but structural prefix indicates a state-level entity mismatch."},
+                {"field": "Filing Year", "issue": "Amended filing requires historical document reference."}
+              ]
             }
             Do not include Markdown backticks or any trailing text, output raw parsable JSON.
         """.trimIndent()
 
         val prompt = """
-            Evaluate application for:
+            Evaluate application file details for underwriting audit:
             Module: $module
             Task: $taskName
             Applicant Name: $applicantName
@@ -158,11 +194,28 @@ object GeminiService {
             val scrubbed = textOutput.trim().removeSurrounding("```json", "```").trim()
             val parsed = JSONObject(scrubbed)
             
+            val status = parsed.optString("compliance_status", "VERIFIED")
+            val confidence = parsed.optDouble("confidence_score", 90.0).toInt()
+            val riskAssessment = parsed.optString("risk_assessment", "Administrative audit completed successfully by Gemini API.")
+            
+            val checklistArray = parsed.optJSONArray("deficiency_checklist")
+            val deficienciesList = mutableListOf<String>()
+            if (checklistArray != null) {
+                for (i in 0 until checklistArray.length()) {
+                    val obj = checklistArray.getJSONObject(i)
+                    val field = obj.optString("field", "")
+                    val issue = obj.optString("issue", "")
+                    if (field.isNotEmpty() || issue.isNotEmpty()) {
+                        deficienciesList.add("[$field] - $issue")
+                    }
+                }
+            }
+            
             AIResult(
-                status = parsed.optString("status", "VERIFIED"),
-                confidence = parsed.optInt("confidence", 90),
-                evaluationText = parsed.optString("evaluationText", "Administrative audit completed successfully by Gemini API."),
-                missingInfo = parsed.optString("missingInfo", "")
+                status = status,
+                confidence = confidence,
+                evaluationText = riskAssessment,
+                missingInfo = deficienciesList.joinToString(",")
             )
 
         } catch (e: Exception) {
@@ -202,10 +255,10 @@ object GeminiService {
             "CIVIC" -> {
                 feedback.append("Citing U.S. Federal Code Title 42 Code of Regulations:\n")
                 if (decryptedFields["Passport_City_Of_Birth"].isNullOrBlank()) {
-                    missingList.add("Physical proof of place and city of birth")
+                    missingList.add("[City of Birth] - Physical proof of place and city of birth is empty")
                 }
                 if (decryptedFields["Emergency_Num"].isNullOrBlank()) {
-                    missingList.add("Secondary contact/emergency telephone profile")
+                    missingList.add("[Emergency Profile] - Secondary contact/emergency telephone profile is empty")
                 }
                 if (missingList.isEmpty() && validationErrors.isEmpty()) {
                     status = "APPROVED"
@@ -218,7 +271,7 @@ object GeminiService {
                 feedback.append("Citing Internal Revenue Code (IRC) Section 6011 Compliance Grid:\n")
                 val income = decryptedFields["Est_Annual_Income"]?.toDoubleOrNull() ?: 0.0
                 if (income <= 0.0) {
-                    missingList.add("Proof of W-2 or certified 1099 revenue records")
+                    missingList.add("[Annual Income] - Proof of W-2 or certified 1099 revenue records is missing")
                     confidence -= 10
                 }
                 if (income > 200000.0) {
@@ -233,10 +286,10 @@ object GeminiService {
             "BUSINESS" -> {
                 feedback.append("Citing Unified Commercial Code (UCC) Article 9 registration checks:\n")
                 if (decryptedFields["Corporate_Structure"].isNullOrBlank()) {
-                    missingList.add("Corporate state organization articles (Inc/LLC)")
+                    missingList.add("[Corporate Articles] - Corporate state organization articles (Inc/LLC) are required")
                 }
                 if (cost < 500.0) {
-                    missingList.add("Corporate registration fee check authorization")
+                    missingList.add("[Operating Capital] - Corporate registration fee check authorization is below minimum §500 threshold")
                     confidence -= 5
                 }
                 if (missingList.isEmpty() && validationErrors.isEmpty()) {
@@ -247,7 +300,7 @@ object GeminiService {
             "PROPERTY" -> {
                 feedback.append("Citing Municipal Zoning Code Section 4.12 Guidelines:\n")
                 if (parcelIdIsMissing(decryptedFields)) {
-                    missingList.add("Valid county parcel boundaries mapping")
+                    missingList.add("[Parcel Boundaries] - Valid county parcel boundaries mapping is missing")
                     status = "MANUAL_REVIEW_NEEDED"
                 }
                 if (squareFootage > 5000.0) {
@@ -255,7 +308,7 @@ object GeminiService {
                     feedback.append("⚠️ Special permit required: Large additions over 5,000 sq ft demand multi-residential environmental impact reviews.\n")
                 }
                 if (cost > 150000.0) {
-                    missingList.add("Proof of certified contractor public liability insurance")
+                    missingList.add("[Liability Insurance] - Proof of certified contractor public liability insurance is required")
                     confidence -= 10
                 }
                 if (missingList.isEmpty() && status != "MANUAL_REVIEW_NEEDED") {
@@ -311,7 +364,7 @@ object GeminiService {
                     feedback.append("⚠️ Structural Warning: Social Security Numbers are strictly 11 characters formatted as AAA-GG-SSSS.\n")
                 }
                 if (decryptedFields["Passport_City_Of_Birth"].isNullOrBlank()) {
-                    missingList.add("Physical proof of place and city of birth")
+                    missingList.add("[City of Birth] - Physical proof of place and city of birth is missing")
                 }
             }
             "TAX" -> {
@@ -322,7 +375,7 @@ object GeminiService {
                 }
                 val income = decryptedFields["Est_Annual_Income"]?.toDoubleOrNull() ?: 0.0
                 if (income <= 0.0) {
-                    missingList.add("Proof of W-2 or certified 1099 revenue records")
+                    missingList.add("[Annual Income] - Proof of W-2 or certified 1099 revenue records is missing")
                 }
             }
             "BUSINESS" -> {
@@ -332,7 +385,7 @@ object GeminiService {
                     feedback.append("⚠️ Structural Warning: Employer ID (EIN) is strictly 10 characters formatted as XX-XXXXXXX.\n")
                 }
                 if (decryptedFields["Corporate_Structure"].isNullOrBlank()) {
-                    missingList.add("Corporate state organization articles (Inc/LLC)")
+                    missingList.add("[Corporate Articles] - Corporate state organization articles (Inc/LLC) are required")
                 }
             }
             "PROPERTY" -> {

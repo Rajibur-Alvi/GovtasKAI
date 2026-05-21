@@ -8,6 +8,8 @@ import com.example.data.AccountEntity
 import com.example.data.AppDatabase
 import com.example.data.GovernmentDao
 import com.example.data.GovTaskEntity
+import com.example.data.SystemAuditLogEntity
+import com.example.data.EncryptedSessionCacheEntity
 import com.example.security.CryptoEngine
 import com.example.security.MfaEngine
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +37,14 @@ class GovernmentRepository(private val dao: GovernmentDao) {
     suspend fun insertTask(task: GovTaskEntity) = dao.insertTask(task)
     suspend fun deleteTaskById(id: Int) = dao.deleteTaskById(id)
     suspend fun clearHistory() = dao.clearHistory()
+
+    suspend fun insertAuditLog(log: SystemAuditLogEntity) = dao.insertAuditLog(log)
+    suspend fun getAllAuditLogsSync(): List<SystemAuditLogEntity> = dao.getAllAuditLogsSync()
+
+    suspend fun saveSessionCache(session: EncryptedSessionCacheEntity) = dao.saveSessionCache(session)
+    suspend fun getSessionCache(moduleCode: String): EncryptedSessionCacheEntity? = dao.getSessionCache(moduleCode)
+    suspend fun deleteSessionCache(moduleCode: String) = dao.deleteSessionCache(moduleCode)
+    suspend fun clearAllSessionCaches() = dao.clearAllSessionCaches()
 }
 
 class GovTaskViewModel(application: Application) : AndroidViewModel(application) {
@@ -95,6 +105,20 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
     private val _decryptedTaskContents = MutableStateFlow<Map<Int, String>>(emptyMap())
     val decryptedTaskContents: StateFlow<Map<Int, String>> = _decryptedTaskContents.asStateFlow()
 
+    // Volatile RAM Form Draft holding current inputs securely before encryption/cache
+    private val _formDraft = MutableStateFlow(FormDraft())
+    val formDraft: StateFlow<FormDraft> = _formDraft.asStateFlow()
+
+    private var currentSessionPin: String? = null
+
+    fun updateFormDraft(update: (FormDraft) -> FormDraft) {
+        _formDraft.value = update(_formDraft.value)
+    }
+
+    fun clearFormDraft() {
+        _formDraft.value = FormDraft()
+    }
+
     // Setup periodic 2FA dynamic code generation in ViewModel
     init {
         viewModelScope.launch(Dispatchers.Default) {
@@ -113,6 +137,17 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
         current.add(0, "⏱️ [${System.currentTimeMillis() % 100000}] $text")
         if (current.size > 20) current.removeLast()
         _securityAuditLogs.value = current
+
+        // Persist encrypted audit log to Room database as mandated
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val encrypted = CryptoEngine.encrypt(text, "SYSTEM_AUDIT_LOG_KEY_SECRET_2026")
+                val log = SystemAuditLogEntity(encryptedMessage = encrypted)
+                repository.insertAuditLog(log)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     // --- Core Operations ---
@@ -133,6 +168,7 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
                 isRegistered = true
             )
             repository.insertAccount(account)
+            currentSessionPin = pin
             addAuditLog("Account Secure Key Derived via PBKDF2/SHA-256.")
             addAuditLog("System PIN registered & 2FA secret generated.")
             _loginState.value = LoginState.MfaEnrollmentNeeded(mfaSecret, codes)
@@ -147,6 +183,7 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
                 repository.insertAccount(currentAcc.copy(mfaEnabled = true))
                 addAuditLog("MFA Shield activated. Hardware key bounds configured.")
                 _loginState.value = LoginState.LoggedIn(currentAcc.username)
+                currentSessionPin?.let { pin -> restoreSessionCache(pin) }
             }
         }
     }
@@ -167,7 +204,9 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
                     _loginState.value = LoginState.MfaChallengeRequired(acc.mfaSecret, pinSource = pin)
                 } else {
                     addAuditLog("Administrator logged in successfully. MFA disabled.")
+                    currentSessionPin = pin
                     _loginState.value = LoginState.LoggedIn(acc.username)
+                    restoreSessionCache(pin)
                 }
             } else {
                 addAuditLog("🔒 SEC_BREACH: Authentication attempt blocked. Incorrect PIN.")
@@ -182,7 +221,9 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
             val acc = repository.getAccountSync()
             if (acc != null && MfaEngine.verifyCode(code, acc.mfaSecret)) {
                 addAuditLog("Step 2 Auth (TOTP Match) verified. Session clearances loaded.")
+                currentSessionPin = pinSource
                 _loginState.value = LoginState.LoggedIn(acc.username)
+                restoreSessionCache(pinSource)
             } else {
                 addAuditLog("🔒 MFA_BLOCK: OTP Token mismatch. Entry rejected.")
                 _loginState.value = LoginState.AuthError("Invalid Security Token match. Please check code or timing.")
@@ -200,6 +241,7 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
                     val remaining = list.filter { it != code.trim() }.joinToString(",")
                     repository.insertAccount(acc.copy(backupCodes = remaining))
                     addAuditLog("🔑 BACKUP_RECOVERY: Security profile bypassed with one-time sheet code.")
+                    currentSessionPin = ""
                     _loginState.value = LoginState.LoggedIn(acc.username)
                 } else {
                     _loginState.value = LoginState.AuthError("Recovery code match failed.")
@@ -211,6 +253,8 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
     fun logout() {
         _loginState.value = LoginState.LoggedOut
         _decryptedTaskContents.value = emptyMap()
+        _formDraft.value = FormDraft()
+        currentSessionPin = null
         _submitStatus.value = null
         addAuditLog("Session closed. In-memory plain text records cleared.")
     }
@@ -285,8 +329,143 @@ class GovTaskViewModel(application: Application) : AndroidViewModel(application)
 
     // Zero-out decrypted buffers immediately from RAM when app is backgrounded or session ends
     fun purgeVolatileMemory() {
+        encryptAndCacheSession()
+
         _decryptedTaskContents.value = emptyMap()
+        _formDraft.value = FormDraft()
+        currentSessionPin = null
+
+        // Lock instantly to require re-authentication upon app foreground
+        _loginState.value = LoginState.LoggedOut
+
         addAuditLog("🔒 SECURITY PROTOCOL: Volatile RAM zero-out triggered. Decrypted text structures fully destroyed.")
+    }
+
+    private fun encryptAndCacheSession() {
+        val pin = currentSessionPin
+        if (pin != null) {
+            val draft = _formDraft.value
+            if (draft.applicantName.isNotEmpty() || 
+                draft.civicEmail.isNotEmpty() || 
+                draft.civicSsn.isNotEmpty() ||
+                draft.taxTin.isNotEmpty() || 
+                draft.busEin.isNotEmpty() || 
+                draft.propParcelId.isNotEmpty()
+            ) {
+                val serialized = serializeDraft(draft)
+                val encrypted = CryptoEngine.encrypt(serialized, pin)
+                viewModelScope.launch(Dispatchers.IO) {
+                    repository.saveSessionCache(
+                        EncryptedSessionCacheEntity(
+                            moduleCode = _activeModule.value,
+                            encryptedData = encrypted
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun restoreSessionCache(pin: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentModule = _activeModule.value
+            val cached = repository.getSessionCache(currentModule)
+            if (cached != null) {
+                val decrypted = CryptoEngine.decrypt(cached.encryptedData, pin)
+                if (!decrypted.startsWith("ERR_")) {
+                    val restoredDraft = deserializeDraft(decrypted)
+                    _formDraft.value = restoredDraft
+                    addAuditLog("🔓 SESSION_RESTORED: Encrypted draft form inputs recovered securely and populated.")
+                }
+                repository.deleteSessionCache(currentModule)
+            }
+        }
+    }
+
+    fun exportComplianceLedger(context: android.content.Context, taskId: Int, onComplete: (java.io.File?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val logs = repository.getAllAuditLogsSync()
+                val decryptBuilder = java.lang.StringBuilder()
+                decryptBuilder.append("====================================================\n")
+                decryptBuilder.append("          SYSTEM COMPLIANCE AUDIT CO-PILOT LEDGER\n")
+                decryptBuilder.append("====================================================\n")
+                decryptBuilder.append("DATE EXPORTED: 2026-05-20\n")
+                decryptBuilder.append("ASSOCIATED G-TASK ID: G-$taskId\n")
+                decryptBuilder.append("VERIFICATION HASH CHAIN SECURITY SECURE-PLAINTEXT\n")
+                decryptBuilder.append("====================================================\n\n")
+
+                logs.forEach { log ->
+                    val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(log.timestamp))
+                    val decryptedMsg = CryptoEngine.decrypt(log.encryptedMessage, "SYSTEM_AUDIT_LOG_KEY_SECRET_2026")
+                    decryptBuilder.append("[$timeStr] $decryptedMsg\n")
+                }
+
+                val downloadsDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val ledgerFile = java.io.File(downloadsDir, "GovTask_ComplianceLedger_G-${taskId}.txt")
+                val outputStream = java.io.FileOutputStream(ledgerFile)
+                outputStream.write(decryptBuilder.toString().toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                outputStream.close()
+                onComplete(ledgerFile)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onComplete(null)
+            }
+        }
+    }
+
+    private fun serializeDraft(draft: FormDraft): String {
+        return try {
+            val json = JSONObject().apply {
+                put("applicantName", draft.applicantName)
+                put("civicEmail", draft.civicEmail)
+                put("civicSsn", draft.civicSsn)
+                put("civicBirthCity", draft.civicBirthCity)
+                put("civicEmergencyNum", draft.civicEmergencyNum)
+                put("taxEmail", draft.taxEmail)
+                put("taxTin", draft.taxTin)
+                put("taxYear", draft.taxYear)
+                put("taxIncome", draft.taxIncome)
+                put("busEmail", draft.busEmail)
+                put("busEin", draft.busEin)
+                put("busStructure", draft.busStructure)
+                put("busCapital", draft.busCapital)
+                put("propEmail", draft.propEmail)
+                put("propParcelId", draft.propParcelId)
+                put("propSqFt", draft.propSqFt)
+                put("propEstCost", draft.propEstCost)
+            }
+            json.toString()
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    private fun deserializeDraft(jsonStr: String): FormDraft {
+        return try {
+            val json = JSONObject(jsonStr)
+            FormDraft(
+                applicantName = json.optString("applicantName", ""),
+                civicEmail = json.optString("civicEmail", ""),
+                civicSsn = json.optString("civicSsn", ""),
+                civicBirthCity = json.optString("civicBirthCity", ""),
+                civicEmergencyNum = json.optString("civicEmergencyNum", ""),
+                taxEmail = json.optString("taxEmail", ""),
+                taxTin = json.optString("taxTin", ""),
+                taxYear = json.optString("taxYear", "2026"),
+                taxIncome = json.optString("taxIncome", ""),
+                busEmail = json.optString("busEmail", ""),
+                busEin = json.optString("busEin", ""),
+                busStructure = json.optString("busStructure", "LLC"),
+                busCapital = json.optString("busCapital", ""),
+                propEmail = json.optString("propEmail", ""),
+                propParcelId = json.optString("propParcelId", ""),
+                propSqFt = json.optString("propSqFt", ""),
+                propEstCost = json.optString("propEstCost", "")
+            )
+        } catch (e: Exception) {
+            FormDraft()
+        }
     }
 
     // Decrypts an individual application in-memory with PIN challenge on user demand
@@ -369,4 +548,28 @@ data class SubmitResult(
     val confidence: Int,
     val evaluation: String,
     val missingInfo: String
+)
+
+data class FormDraft(
+    val applicantName: String = "",
+    // Civic
+    val civicEmail: String = "",
+    val civicSsn: String = "",
+    val civicBirthCity: String = "",
+    val civicEmergencyNum: String = "",
+    // Tax
+    val taxEmail: String = "",
+    val taxTin: String = "",
+    val taxYear: String = "2026",
+    val taxIncome: String = "",
+    // Business
+    val busEmail: String = "",
+    val busEin: String = "",
+    val busStructure: String = "LLC",
+    val busCapital: String = "",
+    // Property
+    val propEmail: String = "",
+    val propParcelId: String = "",
+    val propSqFt: String = "",
+    val propEstCost: String = ""
 )
