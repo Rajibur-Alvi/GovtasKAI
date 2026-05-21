@@ -2,10 +2,8 @@ workflows:
   android-apk-build:
     name: GovTaskAI Production APK Build
     max_build_duration: 10
-    instance_type: mac_mini_m1
+    instance_type: mac_mini_m2
     environment:
-      groups:
-        - android_credentials
       vars:
         JAVA_VERSION: "17"
     triggering:
@@ -14,17 +12,25 @@ workflows:
       branch_patterns:
         - pattern: main
     scripts:
-      - name: Set up local.properties
+      - name: Locate Android Directory and Fix Wrapper
         script: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-      - name: Change permissions for Gradle
-        script: |
+          # Find where the android build files are sitting
+          ANDROID_DIR=$(find . -name "build.gradle" -not -path "*/.*" | head -n 1 | xargs dirname)
+          echo "Android project located at: $ANDROID_DIR"
+          cd $ANDROID_DIR
+          
+          # If gradlew wrapper is missing, generate it automatically
+          if [ ! -f "gradlew" ]; then
+            gradle wrapper
+          fi
           chmod +x gradlew
+          echo "PROJECT_DIR=$PWD" >> $CM_ENV
       - name: Build Android Release APK
         script: |
+          cd $PROJECT_DIR
           ./gradlew assembleRelease
     artifacts:
-      - app/build/outputs/apk/release/*.apk
+      - "**/build/outputs/apk/release/*.apk"
     publishing:
       email:
         recipients:
