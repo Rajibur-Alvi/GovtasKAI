@@ -65,30 +65,36 @@ object CryptoEngine {
         }
     }
 
-    // --- High-Grade Format and Compliance Validations ---
+    // --- High-Grade Format and Compliance Validations (Bangladesh Exclusive) ---
 
-    // US Social Security Number validation (AAA-GG-SSSS) or standard National ID checksum checks
-    fun validateSSN(ssn: String): Boolean {
-        val ssnPattern = "^\\d{3}-\\d{2}-\\d{4}$"
-        return ssn.trim().matches(Regex(ssnPattern))
+    // Bangladeshi National ID (NID) validation (10-digit Smart Card or 17-digit legacy format NID)
+    fun validateNID(nid: String): Boolean {
+        val nidPattern = "^(\\d{10}|\\d{17})$"
+        return nid.trim().matches(Regex(nidPattern))
     }
 
-    // Federal Employer Identification Number (XX-XXXXXXX)
-    fun validateEIN(ein: String): Boolean {
-        val einPattern = "^\\d{2}-\\d{7}$"
-        return ein.trim().matches(Regex(einPattern))
+    // Bangladeshi Business Identification Number (13-digit local BIN for VAT tracking)
+    fun validateBIN(bin: String): Boolean {
+        val binPattern = "^\\d{13}$"
+        return bin.trim().matches(Regex(binPattern))
     }
 
-    // Standard Passport validation (typically 9 alphanumeric characters)
-    fun validatePassport(passport: Boolean, value: String): Boolean {
-        if (!passport) return true
-        val passportPattern = "^[A-Z0-9]{9}$"
-        return value.trim().uppercase().matches(Regex(passportPattern))
+    // RJSC Partnership Registration Number (alphanumeric, min length 5)
+    fun validateRJSCPartnership(num: String): Boolean {
+        val pattern = "^[a-zA-Z0-9-/]{5,30}$"
+        return num.trim().matches(Regex(pattern))
     }
 
-    // Taxpayer Identification Number (TIN)
-    fun validateTIN(tin: String): Boolean {
-        return tin.trim().length in 9..12 && tin.all { it.isDigit() }
+    // RJSC Private Limited Company Incorporation Number (alphanumeric starting with C-, or standard alphanumeric registry structure)
+    fun validateRJSCIncorporation(num: String): Boolean {
+        val pattern = "^(C-)?[a-zA-Z0-9-/]{5,30}$"
+        return num.trim().matches(Regex(pattern))
+    }
+
+    // NBR 12-Digit Taxpayer Identification Number (e-TIN) with strict Regex character check
+    fun validateETIN(tin: String): Boolean {
+        val tinPattern = "^\\d{12}$"
+        return tin.trim().matches(Regex(tinPattern))
     }
 
     // General robust pattern validator for emails
@@ -97,8 +103,9 @@ object CryptoEngine {
         return email.trim().matches(Regex(emailPattern))
     }
 
-    // Checks real-estate land plot parsing format
-    fun validateParcelId(parcel: String): Boolean {
-        return parcel.trim().length >= 6 && parcel.any { it.isDigit() }
+    // Checks Bangladesh Dag/Khatian land parcel plot numbers (Dag/Khatian format, minimum 2 numbers)
+    fun validateKhatianDag(parcel: String): Boolean {
+        val clean = parcel.trim()
+        return clean.isNotEmpty() && clean.length >= 3 && clean.any { it.isDigit() }
     }
 }

@@ -1151,6 +1151,7 @@ fun ModuleFormCard(
     var civicSsn by DraftDelegate({ draft.civicSsn }, { Target -> viewModel.updateFormDraft { it.copy(civicSsn = Target) } })
     var civicEmail by DraftDelegate({ draft.civicEmail }, { Target -> viewModel.updateFormDraft { it.copy(civicEmail = Target) } })
     var civicEmergencyNum by DraftDelegate({ draft.civicEmergencyNum }, { Target -> viewModel.updateFormDraft { it.copy(civicEmergencyNum = Target) } })
+    var civicBin by DraftDelegate({ draft.civicBin }, { Target -> viewModel.updateFormDraft { it.copy(civicBin = Target) } })
 
     var taxTin by DraftDelegate({ draft.taxTin }, { Target -> viewModel.updateFormDraft { it.copy(taxTin = Target) } })
     var taxIncome by DraftDelegate({ draft.taxIncome }, { Target -> viewModel.updateFormDraft { it.copy(taxIncome = Target) } })
@@ -1217,6 +1218,36 @@ fun ModuleFormCard(
             )
 
             // General mandatory applicant name
+            val deskWarning by viewModel.deskWarning.collectAsStateWithLifecycle()
+
+            if (deskWarning != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF3C7)),
+                    border = BorderStroke(1.dp, Color(0xFFD97706))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Warning Badge Icon",
+                            tint = Color(0xFFD97706),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = deskWarning ?: "",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF92400E),
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -1235,7 +1266,7 @@ fun ModuleFormCard(
             )
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Load module-specific fields
+            // Load module-specific fields (Bangladesh Regulatory Framework)
             when (module) {
                 "CIVIC" -> {
                     OutlinedTextField(
@@ -1256,7 +1287,7 @@ fun ModuleFormCard(
                     OutlinedTextField(
                         value = civicSsn,
                         onValueChange = { civicSsn = it },
-                        label = { Text("National Social Security ID (AAA-GG-SSSS)") },
+                        label = { Text("National Identity Card / NID (10 or 17 Digits)") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = com.example.ui.theme.Slate900,
                             unfocusedTextColor = com.example.ui.theme.Slate700,
@@ -1272,7 +1303,7 @@ fun ModuleFormCard(
                         OutlinedTextField(
                             value = civicBirthCity,
                             onValueChange = { civicBirthCity = it },
-                            label = { Text("City of Birth") },
+                            label = { Text("Birth District") },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = com.example.ui.theme.Slate900,
                                 unfocusedTextColor = com.example.ui.theme.Slate700,
@@ -1281,12 +1312,12 @@ fun ModuleFormCard(
                                 focusedLabelColor = com.example.ui.theme.HighDensityPrimary,
                                 unfocusedLabelColor = com.example.ui.theme.Slate500
                             ),
-                            modifier = Modifier.weight(1f).padding(end = 4.dp)
+                            modifier = Modifier.weight(1.5f).padding(end = 4.dp)
                         )
                         OutlinedTextField(
                             value = civicEmergencyNum,
                             onValueChange = { civicEmergencyNum = it },
-                            label = { Text("Emergency Phone") },
+                            label = { Text("Emergency Primary Mobile") },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = com.example.ui.theme.Slate900,
                                 unfocusedTextColor = com.example.ui.theme.Slate700,
@@ -1298,6 +1329,21 @@ fun ModuleFormCard(
                             modifier = Modifier.weight(1f).padding(start = 4.dp)
                         )
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = civicBin,
+                        onValueChange = { civicBin = it },
+                        label = { Text("VAT Business Identification Number / BIN (13 Digits)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = com.example.ui.theme.Slate900,
+                            unfocusedTextColor = com.example.ui.theme.Slate700,
+                            focusedBorderColor = com.example.ui.theme.HighDensityPrimary,
+                            unfocusedBorderColor = com.example.ui.theme.HighDensityBorder,
+                            focusedLabelColor = com.example.ui.theme.HighDensityPrimary,
+                            unfocusedLabelColor = com.example.ui.theme.Slate500
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
                 "TAX" -> {
                     OutlinedTextField(
@@ -1319,7 +1365,7 @@ fun ModuleFormCard(
                         OutlinedTextField(
                             value = taxTin,
                             onValueChange = { taxTin = it },
-                            label = { Text("9-Digit Taxpayer ID (TIN)") },
+                            label = { Text("12-Digit NBR e-TIN Number") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = com.example.ui.theme.Slate900,
@@ -1329,12 +1375,12 @@ fun ModuleFormCard(
                                 focusedLabelColor = com.example.ui.theme.HighDensityPrimary,
                                 unfocusedLabelColor = com.example.ui.theme.Slate500
                             ),
-                            modifier = Modifier.weight(1f).padding(end = 4.dp).testTag("tax_tin_input")
+                            modifier = Modifier.weight(1.5f).padding(end = 4.dp).testTag("tax_tin_input")
                         )
                         OutlinedTextField(
                             value = taxYear,
                             onValueChange = { taxYear = it },
-                            label = { Text("Filing Year") },
+                            label = { Text("Assessment Year") },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = com.example.ui.theme.Slate900,
                                 unfocusedTextColor = com.example.ui.theme.Slate700,
@@ -1350,7 +1396,7 @@ fun ModuleFormCard(
                     OutlinedTextField(
                         value = taxIncome,
                         onValueChange = { taxIncome = it },
-                        label = { Text("Estimated Annual Aggregate Income (USD)") },
+                        label = { Text("Estimated Annual Aggregate Income (BDT / ৳)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = com.example.ui.theme.Slate900,
@@ -1382,7 +1428,7 @@ fun ModuleFormCard(
                     OutlinedTextField(
                         value = busEin,
                         onValueChange = { busEin = it },
-                        label = { Text("Employer Identification Number (XX-XXXXXXX)") },
+                        label = { Text("RJSC Registry Code (Partnership / Inc)") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = com.example.ui.theme.Slate900,
                             unfocusedTextColor = com.example.ui.theme.Slate700,
@@ -1398,7 +1444,7 @@ fun ModuleFormCard(
                         OutlinedTextField(
                             value = busStructure,
                             onValueChange = { busStructure = it },
-                            label = { Text("Corporate Structure (LLC/C-Corp)") },
+                            label = { Text("Business Type Structure") },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = com.example.ui.theme.Slate900,
                                 unfocusedTextColor = com.example.ui.theme.Slate700,
@@ -1407,12 +1453,12 @@ fun ModuleFormCard(
                                 focusedLabelColor = com.example.ui.theme.HighDensityPrimary,
                                 unfocusedLabelColor = com.example.ui.theme.Slate500
                             ),
-                            modifier = Modifier.weight(1f).padding(end = 4.dp)
+                            modifier = Modifier.weight(1.3f).padding(end = 4.dp)
                         )
                         OutlinedTextField(
                             value = busCapital,
                             onValueChange = { busCapital = it },
-                            label = { Text("Estimated Launch Budget ($)") },
+                            label = { Text("Authorized Capital (BDT / ৳)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = com.example.ui.theme.Slate900,
@@ -1445,7 +1491,7 @@ fun ModuleFormCard(
                     OutlinedTextField(
                         value = propParcelId,
                         onValueChange = { propParcelId = it },
-                        label = { Text("Municipal Property Grid Parcel ID") },
+                        label = { Text("Land Plot Dag / Khatian Number") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = com.example.ui.theme.Slate900,
                             unfocusedTextColor = com.example.ui.theme.Slate700,
@@ -1461,7 +1507,7 @@ fun ModuleFormCard(
                         OutlinedTextField(
                             value = propSqFt,
                             onValueChange = { propSqFt = it },
-                            label = { Text("Addition Area (Sq.Ft)") },
+                            label = { Text("Permit Area (Sq.Ft)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = com.example.ui.theme.Slate900,
@@ -1476,7 +1522,7 @@ fun ModuleFormCard(
                         OutlinedTextField(
                             value = propEstCost,
                             onValueChange = { propEstCost = it },
-                            label = { Text("Investment Cost Estimate ($)") },
+                            label = { Text("Est construction Cost (BDT / ৳)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = com.example.ui.theme.Slate900,
@@ -1535,27 +1581,28 @@ fun ModuleFormCard(
                     when (module) {
                         "CIVIC" -> {
                             payload["Contact_Email"] = civicEmail
-                            payload["SSN_OR_TIN"] = civicSsn
-                            payload["Passport_City_Of_Birth"] = civicBirthCity
-                            payload["Emergency_Num"] = civicEmergencyNum
+                            payload["NID"] = civicSsn
+                            payload["Birth_District"] = civicBirthCity
+                            payload["Emergency_Mobile"] = civicEmergencyNum
+                            payload["BIN"] = civicBin
                         }
                         "TAX" -> {
                             payload["Contact_Email"] = taxEmail
-                            payload["Taxpayer_TIN"] = taxTin
-                            payload["Tax_Filing_Year"] = taxYear
-                            payload["Est_Annual_Income"] = taxIncome
+                            payload["e_TIN"] = taxTin
+                            payload["Assessment_Year"] = taxYear
+                            payload["Annual_Income_BDT"] = taxIncome
                         }
                         "BUSINESS" -> {
                             payload["Contact_Email"] = busEmail
-                            payload["Business_EIN"] = busEin
-                            payload["Corporate_Structure"] = busStructure
-                            payload["Est_Capital_Budget"] = busCapital
+                            payload["Corp_Reg_Number"] = busEin
+                            payload["Corp_Structure"] = busStructure
+                            payload["Authorized_Capital_BDT"] = busCapital
                         }
                         "PROPERTY" -> {
                             payload["Contact_Email"] = propEmail
-                            payload["Property_Parcel_ID"] = propParcelId
-                            payload["Zoning_SqFt"] = propSqFt
-                            payload["Est_Budget_USD"] = propEstCost
+                            payload["Dag_Khatian_No"] = propParcelId
+                            payload["Permit_Area_SqFt"] = propSqFt
+                            payload["Est_Budget_BDT"] = propEstCost
                         }
                     }
 
@@ -1590,6 +1637,7 @@ fun ModuleFormCard(
                                 civicSsn = arg1
                                 civicBirthCity = arg2
                                 civicEmergencyNum = arg3
+                                civicBin = "1293845029384" // scan dummy fallback excluded, real valid digit length supplied
                             }
                             "TAX" -> {
                                 taxEmail = scanEmail
@@ -2044,10 +2092,10 @@ fun AdministrativeDocumentScannerDialog(
     var scanCompleted by remember { mutableStateOf(false) }
 
     val docOptions = when (currentModule) {
-        "CIVIC" -> listOf("U.S. National ID (Margaret Vance)", "Expired Passport Card")
-        "TAX" -> listOf("Standard W-2 Form (Robert Sterling)", "Form 1099-MISC Record")
-        "BUSINESS" -> listOf("Articles of Organization (Helix Biotech)", "Commercial Trade Permit")
-        "PROPERTY" -> listOf("Zoning Deed Receipt (David Thorne)", "East District Permit Proposal")
+        "CIVIC" -> listOf("Smart Card NID (Zayan Rahman)", "Older 17-digit NID Paper")
+        "TAX" -> listOf("e-TIN Certificate (Nafisa Islam)", "NBR tax return slip")
+        "BUSINESS" -> listOf("RJSC Incorporation Certificate", "DCCI Trade License Copy")
+        "PROPERTY" -> listOf("Dag Khatian RS Deed Record", "Rajuk Architectural Clearance")
         else -> listOf("Unknown Certification Paper")
     }
 
@@ -2165,10 +2213,10 @@ fun AdministrativeDocumentScannerDialog(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = when (currentModule) {
-                                    "CIVIC" -> "NAME: MARGARET K. VANCE\nID VALUE: 045-88-2512\nBIRTHCITY: INDIANAPOLIS\nEMAIL: margaret.vance@fed.gov"
-                                    "TAX" -> "NAME: ROBERT T. STERLING\nID TIN: 258416397\nTAX YEAR: 2025\nEST ANNUAL INCOME: $185,900"
-                                    "BUSINESS" -> "NAME: HELIX BIOLABS INC.\nID EIN: 47-1958214\nSTRUCTURE: C-Corp\nCAPITAL BUDGET: $820,000"
-                                    "PROPERTY" -> "NAME: DAVID THORNE\nPARCEL ID: PL-85261-N\nZONING SIZE: 4250 SQFT\nEST BUDGET: $135,000"
+                                    "CIVIC" -> "NAME: ZAYAN RAHMAN\nNID: 19952619584102931\nDISTRICT: Dhaka\nMOBILE: 01712345678\nBIN: 1293845029384"
+                                    "TAX" -> "NAME: NAFISA ISLAM\ne-TIN: 284918274019\nYEAR: 2024-2025\nAGGREGATE INCOME: 720,000 ৳"
+                                    "BUSINESS" -> "NAME: AMAN HOLDINGS LTD.\nRJSC NO: C-48591B\nSTRUCTURE: Private Limited\nAUTHORIZED CAPITAL: 15,000,000 ৳"
+                                    "PROPERTY" -> "NAME: KABIR CHOWDHURY\nDAG NO: D-RS-2849\nPERMIT AREA: 5400 SQFT\nEST COST: 18,000,000 ৳"
                                     else -> "GENERIC UNIFIED ADMINISTRATIVE TUPLE EXTREMELY SAFE"
                                 },
                                 color = Color.LightGray,
@@ -2223,16 +2271,16 @@ fun AdministrativeDocumentScannerDialog(
                     onClick = {
                         when (currentModule) {
                             "CIVIC" -> {
-                                onApplyScannedData("Margaret K. Vance", "margaret.vance@fed.gov", "045-88-2512", "Indianapolis", "317-555-0104")
+                                onApplyScannedData("Zayan Rahman", "zayan.rahman@civic.gov.bd", "19952619584102931", "Dhaka", "01712345678")
                             }
                             "TAX" -> {
-                                onApplyScannedData("Robert T. Sterling", "r.sterling@comcast.net", "258416397", "2025", "185900")
+                                onApplyScannedData("Nafisa Islam", "nafisa.islam@outlook.com", "284918274019", "2024-2025", "720000")
                             }
                             "BUSINESS" -> {
-                                onApplyScannedData("Helix BioLabs Inc.", "compliance@helixbiolabs.com", "47-1958214", "C-Corp", "820000")
+                                onApplyScannedData("Aman Holdings Ltd.", "comms@amanholdings.com", "C-48591B", "Private Limited", "15000000")
                             }
                             "PROPERTY" -> {
-                                onApplyScannedData("David Thorne", "david@thornedesign.net", "PL-85261-N", "4250", "135000")
+                                onApplyScannedData("Kabir Chowdhury", "k.chowdhury@gmail.com", "D-RS-2849", "5400", "18000000")
                             }
                         }
                         onDismissRequest()
