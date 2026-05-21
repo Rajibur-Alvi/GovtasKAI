@@ -12,22 +12,21 @@ workflows:
       branch_patterns:
         - pattern: main
     scripts:
-      - name: Locate Android Directory and Fix Wrapper
+      - name: Locate Project and Build APK
         script: |
-          # Find where the android build files are sitting
-          ANDROID_DIR=$(find . -name "build.gradle" -not -path "*/.*" | head -n 1 | xargs dirname)
-          echo "Android project located at: $ANDROID_DIR"
-          cd $ANDROID_DIR
+          # Find the exact folder containing your build instructions
+          TARGET_DIR=$(find . -name "build.gradle" -not -path "*/.*" | head -n 1 | xargs dirname)
+          echo "Target building directory set to: $TARGET_DIR"
+          cd "$TARGET_DIR"
           
-          # If gradlew wrapper is missing, generate it automatically
+          # Force generate the wrapper if it wasn't pushed to GitHub
           if [ ! -f "gradlew" ]; then
             gradle wrapper
           fi
+          
           chmod +x gradlew
-          echo "PROJECT_DIR=$PWD" >> $CM_ENV
-      - name: Build Android Release APK
-        script: |
-          cd $PROJECT_DIR
+          
+          # Execute the direct compilation step right here
           ./gradlew assembleRelease
     artifacts:
       - "**/build/outputs/apk/release/*.apk"
