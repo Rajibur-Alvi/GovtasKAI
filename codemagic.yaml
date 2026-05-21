@@ -14,17 +14,19 @@ workflows:
     scripts:
       - name: Locate Project and Build APK
         script: |
-          # Find the exact folder containing your build instructions
-          TARGET_DIR=$(find . -name "build.gradle*" -not -path "*/.*" | head -n 1 | xargs dirname)
-          echo "Target building directory set to: $TARGET_DIR"
-          cd "$TARGET_DIR"
-          
-          # Force generate the wrapper specifically using the required 9.3.1 version
+          # 1. Force generate the correct 9.3.1 wrapper at the root level first
+          echo "Configuring Gradle 9.3.1 environment at root..."
           gradle wrapper --gradle-version 9.3.1
           
-          chmod +x gradlew
+          # 2. Find where your actual app modules live
+          TARGET_DIR=$(find . -name "build.gradle*" -not -path "*/.*" | head -n 1 | xargs dirname)
+          echo "Target app module located at: $TARGET_DIR"
           
-          # Execute the direct compilation step right here
+          # 3. Ensure execution permissions are bound to the wrapper script
+          chmod +x ./gradlew
+          
+          # 4. Compile the direct release APK build using the system wrapper
+          echo "Starting application compilation..."
           ./gradlew assembleRelease
     artifacts:
       - "**/build/outputs/apk/release/*.apk"
