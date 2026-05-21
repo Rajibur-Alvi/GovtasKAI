@@ -1,0 +1,31 @@
+workflows:
+  android-apk-build:
+    name: GovTaskAI Production APK Build
+    max_build_duration: 10
+    instance_type: mac_mini_m1
+    environment:
+      groups:
+        - android_credentials
+      vars:
+        JAVA_VERSION: "17"
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+    scripts:
+      - name: Set up local.properties
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+      - name: Change permissions for Gradle
+        script: |
+          chmod +x gradlew
+      - name: Build Android Release APK
+        script: |
+          ./gradlew assembleRelease
+    artifacts:
+      - app/build/outputs/apk/release/*.apk
+    publishing:
+      email:
+        recipients:
+          - rajibulalvi2@gmail.com
