@@ -25,11 +25,11 @@ workflows:
           # 3. Ensure execution permissions are bound to the wrapper script
           chmod +x ./gradlew
           
-          # 4. Compile the direct release APK build using the system wrapper
+          # 4. Compile the application as a standard installable APK
           echo "Starting application compilation..."
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
     artifacts:
-      - "**/build/outputs/apk/release/*.apk"
+      - "**/build/outputs/apk/debug/*.apk"
     publishing:
       email:
         recipients:
