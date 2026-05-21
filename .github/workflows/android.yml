@@ -4,28 +4,32 @@ on:
   push:
     branches: [ "main" ]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: set up JDK 17
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
         cache: gradle
 
-    - name: Grant execute permission for gradlew
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Auto-Accept Android SDK Licenses
+      run: yes | sdkmanager --licenses || true
+
+    - name: Grant Execute Permission for Gradle Wrapper
       run: chmod +x gradlew
 
-    - name: Build Release APK
-      run: ./gradlew assembleRelease
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: GovTaskAI-Beta-Build
-        path: app/build/outputs/apk/release/app-release-unsigned.apk
+    - name: Clean Cache and Build Release APK
+      run: ./gradlew clean assembleRelease
